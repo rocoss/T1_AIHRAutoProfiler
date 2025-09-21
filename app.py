@@ -29,7 +29,7 @@ import tempfile
 
 # SciBox API конфигурация
 SCIBOX_CONFIG = {
-    'api_key': "",
+    'api_key': "sk-LRwqBFBToIkqBPogfcTxlw",
     'base_url': "https://llm.t1v.scibox.tech/v1",
     'llm_model': "Qwen2.5-72B-Instruct-AWQ",
     'embedding_model': "bge-m3"
@@ -1249,26 +1249,84 @@ def render_hr_interface():
         # Обработка одобренных руководителем резюме
         st.markdown("### 📋 Резюме, одобренные руководителем")
 
-        approved_files = []
-        approved_dir = MANAGER_REVIEW_DIR / "approved"
+        # ОТЛАДКА: показываем все папки
+        st.markdown("#### 🔍 Отладочная информация:")
+        manager_review_dir = MANAGER_REVIEW_DIR
+        st.write(f"**Базовая папка руководителя:** {manager_review_dir}")
+        st.write(f"**Существует:** {manager_review_dir.exists()}")
 
-        if approved_dir.exists():
-            for file_path in approved_dir.glob("*.json"):
-                try:
-                    with open(file_path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    approved_files.append({
-                        'filename': file_path.name,
-                        'filepath': str(file_path),
-                        'data': data,
-                        'modified': datetime.fromtimestamp(file_path.stat().st_mtime)
-                    })
-                except Exception as e:
-                    st.error(f"Ошибка чтения файла {file_path}: {e}")
+        if manager_review_dir.exists():
+            subdirs = [d for d in manager_review_dir.iterdir() if d.is_dir()]
+            st.write(f"**Подпапки:** {[d.name for d in subdirs]}")
+
+            # Показываем содержимое всех подпапок
+            for subdir in subdirs:
+                files = list(subdir.glob("*.json"))
+                st.write(f"**{subdir.name}:** {len(files)} файлов")
+                if files:
+                    for f in files:
+                        st.write(f"  - {f.name}")
+
+        st.markdown("---")
+
+        approved_files = []
+
+        # Ищем одобренные файлы в разных местах
+        possible_locations = [
+            MANAGER_REVIEW_DIR / "approved",
+            MANAGER_REVIEW_DIR,  # Если файлы сохранились в корневой папке
+            JOB_RESUME_DIR  # На случай если workflow поломался
+        ]
+
+        for location in possible_locations:
+            st.write(f"**Проверяем:** {location}")
+            if location.exists():
+                for file_path in location.glob("*.json"):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+
+                        # Ищем файлы с правильным workflow_stage
+                        workflow_stage = data.get('workflow_stage', '')
+                        status = data.get('status', '')
+
+                        st.write(f"  - {file_path.name}: stage='{workflow_stage}', status='{status}'")
+
+                        # Принимаем файлы, одобренные руководителем
+                        if (workflow_stage == 'manager_approved' or
+                                status == 'ready_for_hr_review' or
+                                'manager_approved' in str(data)):
+                            approved_files.append({
+                                'filename': file_path.name,
+                                'filepath': str(file_path),
+                                'data': data,
+                                'modified': datetime.fromtimestamp(file_path.stat().st_mtime),
+                                'location': str(location)
+                            })
+
+                    except Exception as e:
+                        st.error(f"Ошибка чтения файла {file_path}: {e}")
 
         if not approved_files:
-            st.info("📁 Нет резюме, одобренных руководителем")
+            st.warning("📁 Нет резюме, одобренных руководителем")
             st.markdown("*Резюме появятся здесь после одобрения руководителем*")
+
+            # Показываем все файлы для отладки
+            all_files = []
+            for location in possible_locations:
+                if location.exists():
+                    all_files.extend(list(location.glob("*.json")))
+
+            if all_files:
+                st.markdown("#### 🔍 Все найденные файлы:")
+                for f in all_files:
+                    try:
+                        with open(f, 'r', encoding='utf-8') as file:
+                            data = json.load(file)
+                        st.write(
+                            f"**{f.name}:** workflow_stage='{data.get('workflow_stage', 'none')}', status='{data.get('status', 'none')}'")
+                    except:
+                        st.write(f"**{f.name}:** ошибка чтения")
         else:
             st.success(f"📄 Найдено {len(approved_files)} резюме для финальной обработки")
 
@@ -1279,7 +1337,11 @@ def render_hr_interface():
                 skills = data.get('skills', {})
                 user_profile = data.get('user_profile', {})
 
-                with st.expander(f"📄 {profile_info.get('user_name', 'Неизвестно')} - {resume_file['filename']}", expanded=i < 2):
+                with st.expander(f"📄 {profile_info.get('user_name', 'Неизвестно')} - {resume_file['filename']}",
+                                 expanded=i < 2):
+                    # Показываем откуда файл
+                    st.info(f"📂 Источник: {resume_file['location']}")
+
                     col1, col2 = st.columns([2, 1])
 
                     with col1:
@@ -1295,7 +1357,8 @@ def render_hr_interface():
                             st.info(data['manager_notes'])
 
                         # AI анализ профиля
-                        if st.button(f"🤖 AI анализ для {profile_info.get('user_name', 'сотрудника')}", key=f"ai_rec_{i}"):
+                        if st.button(f"🤖 AI анализ для {profile_info.get('user_name', 'сотрудника')}",
+                                     key=f"ai_rec_{i}"):
                             with st.spinner("Генерируем рекомендации..."):
                                 full_profile_data = {
                                     'profile_info': profile_info,
@@ -1308,17 +1371,20 @@ def render_hr_interface():
 
                         # Топ навыки
                         st.markdown("### 🏆 Топ навыки")
-                        top_skills = sorted(skills.items(),
-                                          key=lambda x: x[1].get('confidence', 0),
-                                          reverse=True)[:8]
+                        if skills:
+                            top_skills = sorted(skills.items(),
+                                                key=lambda x: x[1].get('confidence', 0),
+                                                reverse=True)[:8]
 
-                        for skill_name, skill_data in top_skills:
-                            icon = skill_data.get('icon', '🔧')
-                            level = skill_data.get('experience_level', 'Начинающий')
-                            confidence = skill_data.get('confidence', 0)
+                            for skill_name, skill_data in top_skills:
+                                icon = skill_data.get('icon', '🔧')
+                                level = skill_data.get('experience_level', 'Начинающий')
+                                confidence = skill_data.get('confidence', 0)
 
-                            st.write(f"**{icon} {skill_name}** ({level})")
-                            st.caption(f"Confidence: {confidence:.2f}")
+                                st.write(f"**{icon} {skill_name}** ({level})")
+                                st.caption(f"Confidence: {confidence:.2f}")
+                        else:
+                            st.write("Навыки не найдены")
 
                     with col2:
                         # Геймификация
@@ -1343,23 +1409,23 @@ def render_hr_interface():
 
                         with col_a:
                             department = st.text_input("Отдел:",
-                                                     value=profile_info.get('department', ''),
-                                                     key=f"dept_{i}")
+                                                       value=profile_info.get('department', ''),
+                                                       key=f"dept_{i}")
                             salary_range = st.text_input("Зарплатная вилка:",
-                                                       placeholder="80000-120000",
-                                                       key=f"salary_{i}")
+                                                         placeholder="80000-120000",
+                                                         key=f"salary_{i}")
 
                         with col_b:
                             career_track = st.selectbox("Карьерный трек:",
-                                                      ["Technical", "Management", "Consulting", "Research"],
-                                                      key=f"track_{i}")
+                                                        ["Technical", "Management", "Consulting", "Research"],
+                                                        key=f"track_{i}")
                             priority = st.selectbox("Приоритет:",
-                                                   ["High", "Medium", "Low"],
-                                                   key=f"priority_{i}")
+                                                    ["High", "Medium", "Low"],
+                                                    key=f"priority_{i}")
 
                         hr_notes = st.text_area("Комментарии HR:",
-                                               placeholder="Заметки HR специалиста...",
-                                               key=f"hr_notes_{i}")
+                                                placeholder="Заметки HR специалиста...",
+                                                key=f"hr_notes_{i}")
 
                         col_approve, col_reject = st.columns(2)
 
@@ -1410,7 +1476,8 @@ def render_hr_interface():
                                 # Удаляем исходный файл
                                 os.remove(resume_file['filepath'])
 
-                                st.success(f"✅ Профиль {profile_info.get('user_name', 'сотрудника')} добавлен в базу данных!")
+                                st.success(
+                                    f"✅ Профиль {profile_info.get('user_name', 'сотрудника')} добавлен в базу данных!")
                                 st.success(result)
                                 st.balloons()
                                 time.sleep(2)
@@ -1441,13 +1508,12 @@ def render_hr_interface():
                             except Exception as e:
                                 st.error(f"❌ Ошибка обработки: {e}")
 
+    # Остальные табы остаются без изменений...
     with tab2:
-        # База данных HR
+        # База данных HR (код без изменений)
         st.header("📊 База данных HR")
 
-        # Общая статистика
         col1, col2, col3, col4 = st.columns(4)
-
         with col1:
             st.metric("Сотрудники", len(employees))
         with col2:
