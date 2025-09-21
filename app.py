@@ -29,7 +29,7 @@ import tempfile
 
 # SciBox API конфигурация
 SCIBOX_CONFIG = {
-    'api_key': "sk-LRwqBFBToIkqBPogfcTxlw",
+    'api_key': "",
     'base_url': "https://llm.t1v.scibox.tech/v1",
     'llm_model': "Qwen2.5-72B-Instruct-AWQ",
     'embedding_model': "bge-m3"
