@@ -1,0 +1,8 @@
+{
+  "total_queries": 60,
+  "successful_queries": 60,
+  "relevant_queries": 53,
+  "success_rate": "100.0%",
+  "coverage": "88.3%",
+  "avg_latency_ms": "17.7"
+}
