@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: prefix-search-opensearch
+    environment:
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch
+      - cluster.initial_master_nodes=opensearch-node1
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - search-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_ping | grep -q '{}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  search-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prefix-search-api
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    networks:
+      - search-net
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: python main.py
+
+volumes:
+  opensearch-data:
+
+networks:
+  search-net:
+    driver: bridge
